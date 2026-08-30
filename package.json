@@ -1,0 +1,22 @@
+{
+  "name": "diamond-vault-store",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build && node -e \"const fs=require('fs'); const path=require('path'); const sourceDir='pags'; const targetDir='dist/pags'; fs.mkdirSync(targetDir,{recursive:true}); for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) { if (entry.isFile() && entry.name.endsWith('.html')) { fs.copyFileSync(path.join(sourceDir, entry.name), path.join(targetDir, entry.name)); } }\" && node -e \"const fs=require('fs'); if (fs.existsSync('dashboard.html')) { fs.copyFileSync('dashboard.html', 'dist/dashboard.html'); }\" && node -e \"const fs=require('fs'); if (fs.existsSync('public')) { const sourceDir='public'; const targetDir='dist'; for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) { if (entry.isFile()) { fs.copyFileSync(path.join(sourceDir, entry.name), path.join(targetDir, entry.name)); } } }\"",
+    "preview": "vite preview --host 0.0.0.0",
+    "proxy": "node server.cjs"
+  },
+  "dependencies": {
+    "@paymos/sdk": "^2.1.1",
+    "@supabase/supabase-js": "^2.49.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}
