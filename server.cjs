@@ -11,17 +11,28 @@ dotenv.config({ path: path.join(__dirname, '.env.local') });
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configuração CORS
+// Configuração CORS - será atualizado dinamicamente
+let allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'https://diamond-store-2efqo9lhx-marconi4.vercel.app',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
+// Middleware CORS dinâmico
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:5173',
-    'https://diamond-store-aasajzmdz-marconi4.vercel.app',
-    process.env.FRONTEND_URL
-  ].filter(Boolean),
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
+  methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'access_token'],
+  credentials: true,
 }));
 
 app.use(express.json());
@@ -173,6 +184,54 @@ app.post('/api/paymos/invoice', async (req, res) => {
   }
 });
 
+// Proxy para API Asaas - middleware
+app.use('/api/asaas', async (req, res) => {
+  try {
+    // Remover /api/asaas do caminho
+    const endpoint = req.path.replace('/api/asaas', '');
+
+    // Buscar API key e modo do banco de dados
+    const { data: apisData } = await supabase
+      .from('Apis')
+      .select('api_asaas, api_asaas_production, production_mode')
+      .limit(1)
+      .single();
+
+    const useProduction = apisData?.production_mode === true;
+    const asaasApiKey = useProduction ? apisData?.api_asaas_production : apisData?.api_asaas;
+    const baseUrl = useProduction ? 'https://api.asaas.com/api/v3' : 'https://sandbox.asaas.com/api/v3';
+
+    if (!asaasApiKey) {
+      throw new Error('API Asaas não configurada');
+    }
+
+    console.log('Proxy Asaas:', { method: req.method, endpoint, useProduction });
+
+    // Fazer requisição para API Asaas
+    const response = await fetch(`${baseUrl}${endpoint}`, {
+      method: req.method,
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': asaasApiKey,
+      },
+      ...(req.method !== 'GET' && { body: JSON.stringify(req.body) }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || `Asaas API error: ${response.status}`);
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Erro no proxy Asaas:', error);
+    res.status(500).json({
+      error: error.message,
+    });
+  }
+});
+
 // Rota para verificar status
 app.get('/api/paymos/status/:invoiceId', async (req, res) => {
   try {
@@ -241,7 +300,111 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Proxy server is running' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Proxy server rodando em http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
+// Proxy para API Asaas
+app.use('/api/asaas', async (req, res) => {
+  try {
+    console.log('Proxy Asaas - Method:', req.method, 'URL:', req.url);
+
+    // Buscar API Asaas do banco de dados
+    console.log('Buscando API Asaas no banco de dados...');
+    const { data, error } = await supabase
+      .from('Apis')
+      .select('api_asaas, api_asaas_production, production_mode')
+      .limit(1)
+      .single();
+
+    console.log('Resultado do banco - Error:', error, 'Data:', data);
+
+    if (error || !data) {
+      console.error('API Asaas não configurada:', error);
+      return res.status(500).json({ error: 'API Asaas não configurada', details: error });
+    }
+
+    // Decidir qual API key usar baseado no production_mode
+    const useProduction = data.production_mode === true;
+    const asaasApiKey = useProduction ? data.api_asaas_production : data.api_asaas;
+
+    console.log('Modo de produção:', useProduction);
+    console.log('Usando API key:', useProduction ? 'PRODUÇÃO' : 'SANDBOX');
+
+    if (!asaasApiKey) {
+      console.error('API Asaas não configurada para o modo atual');
+      return res.status(500).json({
+        error: 'API Asaas não configurada',
+        mode: useProduction ? 'PRODUÇÃO' : 'SANDBOX',
+        message: `Configure a coluna ${useProduction ? 'api_asaas_production' : 'api_asaas'} na tabela Apis`
+      });
+    }
+    console.log('API Key Asaas (mascarada):', asaasApiKey ? asaasApiKey.substring(0, 4) + '***' + asaasApiKey.substring(asaasApiKey.length - 4) : 'N/A');
+    console.log('Tamanho da API key:', asaasApiKey ? asaasApiKey.length : 0);
+
+    // Usar URL diferente para sandbox e produção
+    const asaasBaseUrl = useProduction
+      ? 'https://api.asaas.com/api/v3'
+      : 'https://sandbox.asaas.com/api/v3';
+
+    const asaasUrl = `${asaasBaseUrl}${req.url.replace('/api/asaas', '')}`;
+    console.log('URL base da API Asaas:', asaasBaseUrl);
+
+    console.log('Proxy Asaas - URL completa:', asaasUrl);
+    console.log('Proxy Asaas - Body:', req.body);
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'access_token': asaasApiKey,
+    };
+    console.log('Headers sendo enviados:', { ...headers, access_token: '***' });
+
+    const response = await fetch(asaasUrl, {
+      method: req.method,
+      headers: headers,
+      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
+    });
+
+    console.log('Proxy Asaas - Status resposta:', response.status);
+    console.log('Proxy Asaas - Headers resposta:', Object.fromEntries(response.headers.entries()));
+
+    const responseText = await response.text();
+    console.log('Proxy Asaas - Resposta bruta:', responseText);
+    console.log('Proxy Asaas - Tamanho da resposta:', responseText.length);
+
+    // Se a resposta for vazia
+    if (!responseText || responseText.trim() === '') {
+      console.error('Resposta vazia da API Asaas - Status:', response.status);
+      return res.status(response.status).json({
+        error: 'Resposta vazia da API Asaas',
+        status: response.status,
+        message: 'API key pode estar incorreta ou sem permissão'
+      });
+    }
+
+    let dataResponse;
+    try {
+      dataResponse = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('Erro ao fazer parse da resposta Asaas:', parseError);
+      return res.status(500).json({
+        error: 'Resposta inválida da API Asaas',
+        raw: responseText,
+        parseError: parseError.message
+      });
+    }
+
+    if (!response.ok) {
+      console.error('Erro na API Asaas:', dataResponse);
+      return res.status(response.status).json(dataResponse);
+    }
+
+    console.log('Proxy Asaas - Sucesso');
+    res.json(dataResponse);
+  } catch (error) {
+    console.error('Erro no proxy Asaas:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Proxy server rodando em http://0.0.0.0:${PORT}`);
+  console.log(`Health check: http://0.0.0.0:${PORT}/api/health`);
+  console.log(`Acessível via IP da VPS: http://IP-DA-VPS:${PORT}`);
 });
