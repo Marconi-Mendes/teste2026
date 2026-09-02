@@ -521,6 +521,11 @@ app.post('/api/mercadopago/create', async (req, res) => {
         description: description,
         payment_method_id: 'pix',
         date_of_expiration: new Date(Date.now() + 3600000).toISOString(), // 1 hora
+        payer: {
+          email: metadata?.userId ? `user_${metadata.userId}@temp.com` : 'payer@example.com',
+          first_name: 'Cliente',
+          last_name: 'Diamond Store'
+        },
         metadata: metadata
       }),
     });
