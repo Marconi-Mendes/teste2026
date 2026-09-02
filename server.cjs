@@ -489,7 +489,7 @@ app.post('/api/mercadopago/create', async (req, res) => {
 
     // Buscar credenciais Mercado Pago no banco de dados
     const { data: apisData, error } = await supabase
-      .from('Api')
+      .from('Apis')
       .select('access_token, environment')
       .limit(1)
       .single();
@@ -577,7 +577,7 @@ app.get('/api/mercadopago/status/:paymentId', async (req, res) => {
 
     // Buscar credenciais Mercado Pago no banco de dados
     const { data: apisData, error } = await supabase
-      .from('Api')
+      .from('Apis')
       .select('access_token')
       .limit(1)
       .single();
