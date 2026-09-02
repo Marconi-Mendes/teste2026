@@ -510,11 +510,13 @@ app.post('/api/mercadopago/create', async (req, res) => {
     const amountInCents = Math.round(amount * 100);
 
     // Criar pagamento PIX via API do Mercado Pago
+    const idempotencyKey = `${metadata?.userId || 'guest'}_${Date.now()}`;
     const response = await fetch('https://api.mercadopago.com/v1/payments', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
       },
       body: JSON.stringify({
         transaction_amount: amountInCents,
